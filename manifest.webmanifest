@@ -1,0 +1,19 @@
+{
+  "name": "Bexter Pharmaceuticals",
+  "short_name": "Bexter",
+  "description": "Bexter Pharmaceuticals Order Management App",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f7f6",
+  "theme_color": "#087f5b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
