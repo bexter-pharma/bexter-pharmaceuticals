@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#087f5b">
+  <title>Bexter Pharmaceuticals</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+  <header>
+    <h1>Bexter Pharmaceuticals</h1>
+    <p>Order Management System</p>
+  </header>
+
+  <main>
+    <div id="setupNotice">
+      Supabase configuration required.
+    </div>
+
+    <section id="loginView">
+      <h2>Admin Login</h2>
+
+      <form id="loginForm">
+        <input id="email" type="email"
+          placeholder="Email address" required>
+
+        <input id="password" type="password"
+          placeholder="Password" required>
+
+        <p id="loginMessage" class="message"></p>
+
+        <button type="submit">Login</button>
+      </form>
+    </section>
+
+    <section id="dashboardView" class="hidden">
+      <h2>Welcome, <span id="adminName"></span></h2>
+      <p>Bexter Pharmaceuticals Dashboard</p>
+    </section>
+
+    <button id="logoutBtn" class="hidden">
+      Logout
+    </button>
+  </main>
+
+  <script src="./config.js"></script>
+  <script type="module" src="./app.js"></script>
+
+</body>
+</html>
