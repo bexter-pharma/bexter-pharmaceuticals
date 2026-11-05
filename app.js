@@ -1,102 +1,32 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const cfg = window.BEXTER_CONFIG || {};
-const loginView = document.querySelector("#loginView");
-const dashboardView = document.querySelector("#dashboardView");
-const notice = document.querySelector("#setupNotice");
-const msg = document.querySelector("#loginMessage");
-const logout = document.querySelector("#logoutBtn");
-
-function say(t, e = false) {
-  msg.textContent = t;
-  msg.className = e ? "message error" : "message";
+const cfg=window.BEXTER_CONFIG||{};const $=s=>document.querySelector(s);const money=n=>'৳'+Number(n||0).toLocaleString('en-BD',{minimumFractionDigits:2,maximumFractionDigits:2});
+const ready=cfg.SUPABASE_URL?.startsWith('https://')&&cfg.SUPABASE_PUBLISHABLE_KEY&&!cfg.SUPABASE_PUBLISHABLE_KEY.includes('PASTE_');
+if(!ready){$('#setupNotice').textContent='Supabase configuration required.';$('#setupNotice').classList.remove('hidden')}else{
+const sb=createClient(cfg.SUPABASE_URL,cfg.SUPABASE_PUBLISHABLE_KEY);let user=null,profile=null,products=[],orders=[],inventory=[];
+const say=(t,error=false)=>{const e=$('#appMessage');e.textContent=t;e.className='message'+(error?' error':'')};const loginSay=(t,error=false)=>{$('#loginMessage').textContent=t;$('#loginMessage').className='message'+(error?' error':'')};
+const roleLabel={admin:'Administrator',sales_manager:'Sales Manager',mr:'Medical Representative',distributor:'Distributor'};
+function tab(name){document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));document.querySelectorAll('.panel').forEach(p=>p.classList.add('hidden'));$('#tab-'+name).classList.remove('hidden');if(name==='orders'||name==='overview'||name==='approvals'||name==='reports')loadOrders();if(name==='products'||name==='neworder')loadProducts();if(name==='inventory')loadInventory()}
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)tab(b.dataset.tab)});
+async function loadProfile(u){const {data,error}=await sb.from('profiles').select('id,full_name,role,is_active').eq('id',u.id).maybeSingle();if(error)throw error;if(!data||!data.is_active)throw Error('আপনার Profile নেই অথবা Account inactive. Admin-এর সঙ্গে যোগাযোগ করুন।');profile=data;user=u;$('#adminName').textContent=data.full_name||u.email;$('#roleName').textContent=roleLabel[data.role]||data.role;$('#loginView').classList.add('hidden');$('#dashboardView').classList.remove('hidden');$('#logoutBtn').classList.remove('hidden');const canOrder=['mr','distributor'].includes(data.role);$('#tabs [data-tab="neworder"]').classList.toggle('hidden',!canOrder);$('#tabs [data-tab="approvals"]').classList.toggle('hidden',!['admin','sales_manager'].includes(data.role));$('#tabs [data-tab="products"]').classList.toggle('hidden',data.role!=='admin');$('#tabs [data-tab="inventory"]').classList.toggle('hidden',data.role!=='admin');await Promise.all([loadProducts(),loadOrders(),loadInventory()]);tab('overview')}
+$('#loginForm').addEventListener('submit',async e=>{e.preventDefault();const b=e.currentTarget.querySelector('button');b.disabled=true;loginSay('Login যাচাই হচ্ছে...');try{const {data,error}=await sb.auth.signInWithPassword({email:$('#email').value.trim(),password:$('#password').value});if(error)throw error;await loadProfile(data.user)}catch(err){loginSay(err.message,true)}finally{b.disabled=false}});
+$('#logoutBtn').addEventListener('click',async()=>{await sb.auth.signOut();user=null;profile=null;$('#dashboardView').classList.add('hidden');$('#loginView').classList.remove('hidden');$('#logoutBtn').classList.add('hidden');loginSay('Logout সম্পন্ন হয়েছে।')});
+async function loadProducts(){const {data,error}=await sb.from('products').select('id,product_code,product_name,strength,dosage_form,pack_size,unit,unit_price,is_active').order('product_name');if(error){say(error.message,true);return}products=data||[];renderProducts();renderOrderLines()}
+function renderProducts(){const el=$('#productsTable');if(!el)return;if(!products.length){el.innerHTML='<div class="empty">No products found.</div>';return}el.innerHTML='<div class="tablewrap"><table><thead><tr><th>Code</th><th>Product</th><th>Strength / Form</th><th>Price</th><th>Status</th></tr></thead><tbody>'+products.map(p=>`<tr><td>${esc(p.product_code)}</td><td>${esc(p.product_name)}</td><td>${esc([p.strength,p.dosage_form].filter(Boolean).join(' / '))}</td><td>${money(p.unit_price)}</td><td>${p.is_active?'Active':'Inactive'}</td></tr>`).join('')+'</tbody></table></div>'}
+function renderOrderLines(){const el=$('#orderLines');if(!el)return;const old=[...el.querySelectorAll('.orderline')].map(r=>({id:r.querySelector('select').value,qty:r.querySelector('input').value}));if(!el.children.length)old.push({id:'',qty:'1'});el.innerHTML=old.map(v=>`<div class="orderline"><select class="lineproduct"><option value="">Select product</option>${products.filter(p=>p.is_active).map(p=>`<option value="${p.id}" ${p.id===v.id?'selected':''}>${esc(p.product_name)} (${esc(p.product_code)}) — ${money(p.unit_price)}</option>`).join('')}</select><input type="number" min="1" step="1" value="${v.qty||1}" aria-label="Quantity"><button type="button" class="removeLine">×</button></div>`).join('');calcTotal()}
+function calcTotal(){let total=0;$('#orderLines').querySelectorAll('.orderline').forEach(r=>{const p=products.find(x=>x.id===r.querySelector('select').value);total+=(p?.unit_price||0)*Math.max(0,Number(r.querySelector('input').value)||0)});$('#orderTotal').textContent='Total: '+money(total)}
+$('#addLine').addEventListener('click',()=>{$('#orderLines').insertAdjacentHTML('beforeend','<div class="orderline"><select class="lineproduct"><option value="">Select product</option>'+products.filter(p=>p.is_active).map(p=>`<option value="${p.id}">${esc(p.product_name)} (${esc(p.product_code)}) — ${money(p.unit_price)}</option>`).join('')+'</select><input type="number" min="1" value="1" aria-label="Quantity"><button type="button" class="removeLine">×</button></div>')});$('#orderLines').addEventListener('change',calcTotal);$('#orderLines').addEventListener('input',calcTotal);$('#orderLines').addEventListener('click',e=>{if(e.target.classList.contains('removeLine')){e.target.closest('.orderline').remove();calcTotal()}});
+$('#orderForm').addEventListener('submit',async e=>{e.preventDefault();const items=[...$('#orderLines').querySelectorAll('.orderline')].map(r=>({product_id:r.querySelector('select').value,quantity:Number(r.querySelector('input').value)})).filter(x=>x.product_id&&x.quantity>0);if(!items.length){say('কমপক্ষে একটি Product নির্বাচন করুন।',true);return}const b=e.submitter;b.disabled=true;try{const {data,error}=await sb.rpc('submit_order',{p_items:items,p_remarks:$('#orderRemarks').value.trim()||null});if(error)throw error;$('#orderRemarks').value='';renderOrderLines();say('Order সফলভাবে জমা হয়েছে। Order ID: '+data);await loadOrders();tab('orders')}catch(err){say(err.message,true)}finally{b.disabled=false}});
+$('#productForm').addEventListener('submit',async e=>{e.preventDefault();if(profile.role!=='admin')return say('শুধু Admin Product যোগ করতে পারবেন।',true);const b=e.submitter;b.disabled=true;try{const payload={product_code:$('#pcode').value.trim(),product_name:$('#pname').value.trim(),strength:$('#pstrength').value.trim()||null,dosage_form:$('#pform').value.trim()||null,pack_size:$('#ppack').value.trim()||null,unit_price:Number($('#pprice').value)};const {data,error}=await sb.from('products').insert(payload).select('id').single();if(error)throw error;const inv=await sb.from('inventory').insert({product_id:data.id,on_hand:0,reorder_level:0});if(inv.error)throw inv.error;e.target.reset();say('Product যোগ হয়েছে।');await loadProducts();await loadInventory()}catch(err){say(err.message,true)}finally{b.disabled=false}});
+async function loadInventory(){if(!user)return;const {data,error}=await sb.from('inventory').select('product_id,on_hand,reorder_level,products(product_code,product_name,unit)').order('updated_at',{ascending:false});if(error){say(error.message,true);return}inventory=data||[];$('#inventoryTable').innerHTML=inventory.length?'<div class="tablewrap"><table><thead><tr><th>Product</th><th>On hand</th><th>Reorder level</th><th>Stock update</th></tr></thead><tbody>'+inventory.map(i=>`<tr><td>${esc(i.products?.product_name||'')}</td><td>${i.on_hand}</td><td>${i.reorder_level}</td><td>${profile.role==='admin'?`<form class="stockForm" data-id="${i.product_id}"><input type="number" min="0" value="${i.on_hand}" style="width:85px;margin:0;padding:7px"><button class="small">Save</button></form>`:'—'}</td></tr>`).join('')+'</tbody></table></div>':'<div class="empty">Inventory data not found.</div>'}
+$('#inventoryTable').addEventListener('submit',async e=>{if(!e.target.matches('.stockForm'))return;e.preventDefault();const f=e.target;const val=Number(f.querySelector('input').value);const {error}=await sb.from('inventory').update({on_hand:val,updated_at:new Date().toISOString()}).eq('product_id',f.dataset.id);if(error)say(error.message,true);else{say('Stock updated.');loadInventory()}});
+async function loadOrders(){if(!user)return;let q=sb.from('orders').select('id,order_no,created_by,order_date,status,subtotal,remarks,created_at,profiles(full_name),order_items(quantity,product_name_snapshot,unit_price,line_total)').order('created_at',{ascending:false}).limit(200);if(!['admin','sales_manager'].includes(profile.role))q=q.eq('created_by',user.id);const {data,error}=await q;if(error){say(error.message,true);return}orders=data||[];renderOrders();renderOverview();renderApprovals();renderReports()}
+const statusText={pending_manager:'Pending Manager',pending_admin:'Pending Admin',approved:'Approved',rejected:'Rejected',cancelled:'Cancelled'};function orderRows(rows,approval=false){if(!rows.length)return '<div class="empty">কোনো Order পাওয়া যায়নি।</div>';return '<div class="tablewrap"><table><thead><tr><th>Order No.</th><th>Date</th><th>Created by</th><th>Items</th><th>Total</th><th>Status</th>'+(approval?'<th>Action</th>':'')+'</tr></thead><tbody>'+rows.map(o=>`<tr><td>${esc(o.order_no)}</td><td>${esc(o.order_date)}</td><td>${esc(o.profiles?.full_name||'—')}</td><td>${(o.order_items||[]).reduce((s,i)=>s+i.quantity,0)}</td><td>${money(o.subtotal)}</td><td><span class="status ${o.status}">${statusText[o.status]||o.status}</span></td>${approval?`<td><div class="actions"><button data-review="approved" data-id="${o.id}">Approve</button><button data-review="rejected" data-id="${o.id}" class="secondary">Reject</button></div></td>`:''}</tr>`).join('')+'</tbody></table></div>'}
+function renderOrders(){$('#ordersTable').innerHTML=orderRows(orders)}function renderApprovals(){const pending=orders.filter(o=>(profile.role==='sales_manager'&&o.status==='pending_manager')||(profile.role==='admin'&&o.status==='pending_admin'));$('#approvalsTable').innerHTML=orderRows(pending,true)}
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-review]');if(!b)return;const decision=b.dataset.review;let remarks=null;if(decision==='rejected'){remarks=prompt('Reject করার কারণ লিখুন:');if(remarks===null)return}b.disabled=true;try{const {error}=await sb.rpc('review_order',{p_order_id:b.dataset.id,p_decision:decision,p_remarks:remarks});if(error)throw error;say('Order '+(decision==='approved'?'approved':'rejected')+' হয়েছে।');await loadOrders();await loadInventory()}catch(err){say(err.message,true)}finally{b.disabled=false}});
+function renderOverview(){const pending=orders.filter(o=>o.status.startsWith('pending')).length;const approved=orders.filter(o=>o.status==='approved').length;const total=orders.reduce((s,o)=>s+Number(o.subtotal),0);$('#stats').innerHTML=[['Total Orders',orders.length],['Pending',pending],['Approved',approved],['Order Value',money(total)]].map(x=>`<div class="stat"><b>${x[1]}</b><span>${x[0]}</span></div>`).join('');$('#recentOrders').innerHTML=orderRows(orders.slice(0,5))}
+function renderReports(){const total=orders.reduce((s,o)=>s+Number(o.subtotal),0),approved=orders.filter(o=>o.status==='approved').reduce((s,o)=>s+Number(o.subtotal),0);$('#reportSummary').innerHTML=`<div class="stats"><div class="stat"><b>${orders.length}</b><span>Total orders</span></div><div class="stat"><b>${money(total)}</b><span>Total order value</span></div><div class="stat"><b>${money(approved)}</b><span>Approved order value</span></div><div class="stat"><b>${orders.filter(o=>o.status==='rejected').length}</b><span>Rejected orders</span></div></div>`}
+$('#refreshOrders').addEventListener('click',loadOrders);$('#exportCsv').addEventListener('click',()=>{const rows=[['Order No','Date','Created By','Status','Subtotal'],...orders.map(o=>[o.order_no,o.order_date,o.profiles?.full_name||'',o.status,o.subtotal])];const csv=rows.map(r=>r.map(v=>'"'+String(v??'').replaceAll('"','""')+'"').join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'}));a.download='bexter-orders.csv';a.click();URL.revokeObjectURL(a.href)});
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+sb.auth.getSession().then(async({data})=>{if(data.session?.user){try{await loadProfile(data.session.user)}catch(e){await sb.auth.signOut();loginSay(e.message,true)}}});
 }
-
-function showLogin() {
-  loginView.classList.remove("hidden");
-  dashboardView.classList.add("hidden");
-  logout.classList.add("hidden");
-}
-
-function showDashboard(n) {
-  document.querySelector("#adminName").textContent = n || "Admin";
-  loginView.classList.add("hidden");
-  dashboardView.classList.remove("hidden");
-  logout.classList.remove("hidden");
-}
-
-const ready =
-  cfg.SUPABASE_URL?.startsWith("https://") &&
-  cfg.SUPABASE_PUBLISHABLE_KEY &&
-  !cfg.SUPABASE_PUBLISHABLE_KEY.includes("PASTE_");
-
-if (!ready) {
-  say("config.js এখনো পূরণ করা হয়নি।", true);
-} else {
-  notice.classList.add("hidden");
-  const supabase = createClient(
-    cfg.SUPABASE_URL,
-    cfg.SUPABASE_PUBLISHABLE_KEY
-  );
-
-  async function profile(user) {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("full_name,role")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data || data.role !== "admin") {
-      await supabase.auth.signOut();
-      throw new Error("এই account-এর Admin permission নেই।");
-    }
-
-    showDashboard(data.full_name);
-  }
-
-  document.querySelector("#loginForm").addEventListener("submit", async ev => {
-    ev.preventDefault();
-    const btn = ev.currentTarget.querySelector("button");
-    btn.disabled = true;
-    say("Login যাচাই হচ্ছে...");
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: document.querySelector("#email").value.trim(),
-        password: document.querySelector("#password").value
-      });
-
-      if (error) throw error;
-      await profile(data.user);
-    } catch (e) {
-      say(e.message || "Login করা যায়নি।", true);
-    } finally {
-      btn.disabled = false;
-    }
-  });
-
-  logout.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    showLogin();
-    say("Logout সম্পন্ন হয়েছে।");
-  });
-
-  supabase.auth.getSession().then(async ({ data }) => {
-    if (data.session?.user) {
-      try {
-        await profile(data.session.user);
-      } catch (e) {
-        showLogin();
-        say(e.message, true);
-      }
-    }
-  });
-}
-
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(console.error);
-  });
-}
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(console.error));
