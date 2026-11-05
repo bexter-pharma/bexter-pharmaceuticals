@@ -31,8 +31,8 @@ begin
     raise exception 'Login required';
   end if;
 
-  if public.current_app_role() not in ('mr', 'distributor') then
-    raise exception 'Only MR or Distributor can submit orders';
+  if public.current_app_role() not in ('mr', 'distributor', 'admin') then
+    raise exception 'Only MR, Distributor or Admin can submit orders';
   end if;
 
   if coalesce(trim(p_customer_name), '') = '' then
